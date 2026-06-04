@@ -12,7 +12,7 @@ def load_accounts() -> pd.DataFrame:
     staleness_max = df["days_since_last_sales_activity"].max()
     df["days_since_last_sales_activity"] = df["days_since_last_sales_activity"].fillna(staleness_max)
     df["region"] = df["region"].fillna("Unknown").replace("", "Unknown")
-    df["ai_usage"] = df["ai_usage"].fillna(0.0)
+    df["ai_usage"] = df["ai_usage"].fillna(0.0).clip(lower=0.0, upper=1.0)
 
     # Derived columns
     df["seat_utilization"] = df["nr_active_users"] / df["nr_licensed_seats"]
