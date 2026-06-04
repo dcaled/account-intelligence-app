@@ -16,6 +16,7 @@ def load_accounts() -> pd.DataFrame:
 
     # Derived columns
     df["seat_utilization"] = df["nr_active_users"] / df["nr_licensed_seats"]
+    df["seat_penetration"] = (df["nr_licensed_seats"] / df["nr_employees"]).clip(upper=1.0)
     df["arr_uplift"] = df["revenue_end_of_quarter"] / df["current_revenue"]
     df["unused_seats"] = df["nr_licensed_seats"] - df["nr_active_users"]
     df["expansion_signal"] = df["revenue_end_of_quarter"] > df["current_revenue"]
