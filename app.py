@@ -297,6 +297,7 @@ def render_account_detail(account: pd.Series) -> None:
 
     st.subheader(account["account_name"])
     st.caption(f"{account['industry']} · {account['segment']} · {account['region']}")
+    st.markdown(account["account_description"])
 
     render_scores(account)
     st.divider()
