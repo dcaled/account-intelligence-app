@@ -1,0 +1,12 @@
+line-length = 88
+exclude = ["exploration.ipynb"]
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line too long — handled by the formatter, not the linter
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
