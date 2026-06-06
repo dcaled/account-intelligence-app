@@ -74,6 +74,22 @@ The app will open at `http://localhost:8501` and load all 1,000 accounts automat
 
 ## How Scoring Works
 
+### Data layer enrichment
+
+The raw CSV has 15 columns. `data_loader.py` derives 7 additional fields before any scoring happens:
+
+| Derived field | Source columns | Purpose |
+|---|---|---|
+| `seat_utilization` | `nr_active_users / nr_licensed_seats` | Core risk and opportunity signal |
+| `arr_uplift` | `revenue_end_of_quarter / current_revenue` | Revenue trajectory ratio used by both scores |
+| `license_coverage` | `nr_licensed_seats / nr_employees` | Expansion whitespace signal |
+| `unused_seats` | `nr_licensed_seats − nr_active_users` | Display metric in the UI |
+| `has_transcript` | `call_transcript_summary` not null | Controls conditional prompt section |
+| `contraction_signal` | `arr_uplift < 1.0` | Flags accounts with projected revenue decline |
+| `expansion_signal` | `arr_uplift > 1.0` | Flags accounts with projected revenue growth |
+
+Null values in `days_since_last_sales_activity` are filled with the dataset maximum (worst-case inactivity) and nulls in `nr_support_tickets` are filled with 0. This avoids silently dropping accounts with missing data.
+
 ### AE Prioritization Framework
 
 The framework splits accounts into two buckets — those that need **protecting** and those ready to **grow** — and stack-ranks within each by revenue at stake.
@@ -205,13 +221,13 @@ Output is streamed token-by-token via `anthropic.messages.stream()` and rendered
 flowchart TD
     CSV[("account_data.csv")]
 
-    DL["data_loader.py\nLoads CSV · fills nulls\nderives seat_utilization, arr_uplift, license_coverage"]
+    DL["data_loader.py\nLoads CSV · Fills nulls · Derives seat_utilization, arr_uplift, license_coverage"]
 
     SC["scorer.py\nRisk score · Opportunity score · Attention score · Primary action"]
 
-    APP["app.py**\nStreamlit UI · Filters · Account table · Detail panel"]
+    APP["app.py\nStreamlit UI · Filters · Account table · Detail panel"]
 
-    PB["prompt_builder.py\n3-part user message · conditional signals & interpreters"]
+    PB["prompt_builder.py\n3-Part user message · Conditional signals & interpreters"]
 
     LC["llm_client.py\nAnthropic SDK streaming wrapper"]
 
@@ -235,19 +251,33 @@ flowchart TD
 
 ## Key Decisions and Tradeoffs
 
-**Python + Streamlit over a web framework:** Streamlit eliminates the frontend/backend split — the entire app is a single Python process. For a 3-hour build with a live demo, this is the correct tradeoff. The cost is limited layout flexibility and no persistent state across sessions.
+### Scoring & Prioritization
+
+**Rule-based scorer over a machine learning model:** With no historical outcome labels — no record of which accounts actually churned or expanded — there is no ground truth to learn from. Unsupervised approaches (clustering, anomaly detection) could group accounts by signal similarity but would still require human interpretation to translate clusters into a risk/opportunity score, moving the design choices downstream rather than eliminating them. The rule-based scorer encodes domain knowledge explicitly and makes every weighting decision auditable. The ML path becomes clearly superior only when historical labeled outcomes are available (e.g. past churn events, confirmed expansions), at which point a supervised model such as XGBoost or Logistic Regression could learn signal weights from data rather than judgment. The feature engineering done here — `seat_utilization`, `arr_uplift`, `license_coverage`, `contraction_signal` — would transfer directly to such a model.
 
 **Two separate scores instead of one composite:** Showing both the risk and opportunity score tells the AE _why_ an account surfaced. A single number loses that signal. The composite attention score is used only for sorting.
 
-**Revenue as a sort tiebreaker, not a scoring input:** Revenue is not baked into the scores themselves — two accounts with identical signals should score identically regardless of size. Instead, the account table sorts by `attention_score DESC, current_revenue DESC` so that when scores are equal, the higher-value account surfaces first. This keeps the scoring logic clean while reflecting the AE's natural priority.
+**Revenue as a sort tiebreaker, not a scoring input:** Baking revenue into the risk or opportunity score would corrupt what the score represents — a struggling SMB would always rank below a healthy Enterprise account, not because it needs less attention but because it's smaller. That conflates "how urgent is this account?" with "how valuable is this account?", and the score should only answer the first question. Revenue enters the table as a tiebreaker: the sort is `attention_score DESC, current_revenue DESC`, so when two accounts are equally urgent, the higher-revenue one surfaces first. This reflects the AE's real priority without distorting the underlying signals.
 
-**Haiku over Sonnet/Opus:** The brief template constrains the output to under 300 words and provides a structured format. The task does not require reasoning — it requires following a template with account-specific data injected. Haiku does this well at 10x lower cost and 3x lower latency, which matters for a demo where you'll generate multiple briefs.
+**Scoring thresholds calibrated to data distribution:** The 99th-percentile ticket cap (13), the observed maximum inactivity ceiling, and the 75%+ seat saturation threshold were chosen by inspecting the CSV, not pulled from thin air. The inactivity ceiling in particular is computed dynamically from the dataset maximum — the original plan hardcoded 120 days, but data exploration showed accounts going beyond that, so we use `df["days_since_last_sales_activity"].max()` as both the null fill value and the normalization ceiling. This keeps accounts spread across the label bands rather than clustering at extremes.
 
-**Scoring thresholds calibrated to data distribution:** The 99th-percentile ticket cap (13), the observed maximum inactivity ceiling, and the 85%+ utilization bonus were chosen by inspecting the CSV, not pulled from thin air. The inactivity ceiling in particular is computed dynamically from the dataset maximum — the original plan hardcoded 120 days, but data exploration showed accounts going beyond that, so we use `df["days_since_last_sales_activity"].max()` as both the null fill value and the normalization ceiling. This keeps accounts spread across the label bands rather than clustering at extremes.
+### Product & UX
+
+**Single actionable directive over dual labels:** Each account exposes two independent scores (risk and opportunity), but the table surfaces a single action directive — Protect, Expand, Monitor, etc. — derived from their combination. Showing both labels simultaneously forces the AE to synthesize two signals under time pressure; a single directive removes that step. The two scores remain visible in the detail panel for AEs who want to understand the reasoning, but the default view answers "what should I do?" not "what are the scores?".
+
+**Streaming over batch generation:** Briefs are streamed token-by-token via `anthropic.messages.stream()` and rendered progressively with `st.write_stream()`. A typical brief takes 3–5 seconds to generate; streaming makes that wait feel shorter because the AE starts reading while the model is still writing. For a tool used before a call, that perceived speed matters.
+
+### LLM & Prompt Design
+
+**Haiku over Sonnet/Opus:** The brief output is constrained by the system prompt's explicit per-section length limits (2 sentences, 1 sentence, 3 bullets, 1 sentence, 1 sentence) — the task does not require reasoning, it requires following a template with account-specific data injected. Haiku does this well at 10x lower cost and 3x lower latency than Sonnet, which matters for a demo where multiple briefs are generated in one session.
 
 **No vector database or embeddings:** The account descriptions are short and structured. Injecting them directly into the prompt is simpler, cheaper, and faster than retrieval — and the structured fields do the heavy lifting anyway.
 
-**Rule-based scorer over a machine learning model:** With no historical outcome labels — no record of which accounts actually churned or expanded — there is no ground truth to learn from. Unsupervised approaches (clustering, anomaly detection) could group accounts by signal similarity but would still require human interpretation to translate clusters into a risk/opportunity score, moving the design choices downstream rather than eliminating them. The rule-based scorer encodes domain knowledge explicitly and makes every weighting decision auditable. The ML path becomes clearly superior only when historical labeled outcomes are available (e.g. past churn events, confirmed expansions), at which point a supervised model such as XGBoost or Logistic Regression could learn signal weights from data rather than judgment. The feature engineering done here — `seat_utilization`, `arr_uplift`, `license_coverage`, `contraction_signal` — would transfer directly to such a model.
+### App Architecture
+
+**Python + Streamlit over a web framework:** Streamlit eliminates the frontend/backend split — the entire app is a single Python process. For a 3-hour build with a live demo, this is the correct tradeoff. The cost is limited layout flexibility and no persistent state across sessions.
+
+**Single-file app structure:** All UI logic lives in `app.py` with helper functions rather than split across multiple modules. Streamlit's execution model reruns the entire script on every interaction, which makes multi-file splitting feel natural but adds indirection without benefit at this scale. Keeping everything in one file makes the data flow — load → score → filter → render — immediately readable for a reviewer.
 
 ---
 
