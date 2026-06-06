@@ -201,7 +201,7 @@ Output is streamed token-by-token via `anthropic.messages.stream()` and rendered
 ## Architecture
 
 ```mermaid
-%%{init: {"flowchart": {"wrappingWidth": 480}}}%%
+%%{init: {"themeVariables": {"fontSize": "11px"}, "flowchart": {"wrappingWidth": 480}}}%%
 flowchart TD
     CSV[("account_data.csv")]
 
@@ -228,6 +228,7 @@ flowchart TD
     style PB fill:#fef3c7,stroke:#d97706,color:#78350f
     style LC fill:#fef3c7,stroke:#d97706,color:#78350f
     style API fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+
 ```
 
 ---
