@@ -228,7 +228,7 @@ def render_risk_signals(account: pd.Series) -> None:
         col_renewal.metric(
             "Renewal",
             f"{int(account['days_to_next_renewal'])}d",
-            help="Days until the next renewal. Accounts renewing within 180 days contribute to the risk score.",
+            help="Days until the next renewal. The risk signal is continuous — accounts renewing sooner score proportionally higher, normalized against the portfolio maximum (270 days).",
         )
         col_last_activity.metric(
             "Last Activity",

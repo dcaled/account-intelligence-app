@@ -76,7 +76,7 @@ The app will open at `http://localhost:8501` and load all 1,000 accounts automat
 
 ### Data layer enrichment
 
-The raw CSV has 15 columns. `data_loader.py` derives 7 additional fields before any scoring happens:
+The raw CSV has 16 columns. `data_loader.py` derives 7 additional fields before any scoring happens:
 
 | Derived field | Source columns | Purpose |
 |---|---|---|
@@ -88,7 +88,7 @@ The raw CSV has 15 columns. `data_loader.py` derives 7 additional fields before 
 | `contraction_signal` | `arr_uplift < 1.0` | Flags accounts with projected revenue decline |
 | `expansion_signal` | `arr_uplift > 1.0` | Flags accounts with projected revenue growth |
 
-Null values in `days_since_last_sales_activity` are filled with the dataset maximum (worst-case inactivity) and nulls in `nr_support_tickets` are filled with 0. This avoids silently dropping accounts with missing data.
+Null values in `days_since_last_sales_activity` are filled with the dataset maximum (worst-case inactivity). This avoids silently dropping accounts with missing data.
 
 ### AE Prioritization Framework
 
@@ -177,7 +177,7 @@ Each account generates a unique user message built in three parts. The model rec
 
 **Part 3 — Last call transcript (conditional).** If a transcript exists, it's included with recency in days so the model knows how stale the context is. If no transcript exists, the model is told explicitly — so it doesn't hallucinate a recent conversation.
 
-**Omitted entirely:** raw column IDs, employee headcount, region. These carry low signal for a meeting-prep brief.
+**Omitted entirely:** raw column IDs, employee headcount. These carry low signal for a meeting-prep brief.
 
 ### Meeting brief structure
 
@@ -259,7 +259,7 @@ flowchart TD
 
 **Revenue as a sort tiebreaker, not a scoring input:** Baking revenue into the risk or opportunity score would corrupt what the score represents — a struggling SMB would always rank below a healthy Enterprise account, not because it needs less attention but because it's smaller. That conflates "how urgent is this account?" with "how valuable is this account?", and the score should only answer the first question. Revenue enters the table as a tiebreaker: the sort is `attention_score DESC, current_revenue DESC`, so when two accounts are equally urgent, the higher-revenue one surfaces first. This reflects the AE's real priority without distorting the underlying signals.
 
-**Scoring thresholds calibrated to data distribution:** The 99th-percentile ticket cap (13), the observed maximum inactivity ceiling, and the 75%+ seat saturation threshold were chosen by inspecting the CSV, not pulled from thin air. The inactivity ceiling in particular is computed dynamically from the dataset maximum — the original plan hardcoded 120 days, but data exploration showed accounts going beyond that, so we use `df["days_since_last_sales_activity"].max()` as both the null fill value and the normalization ceiling. This keeps accounts spread across the label bands rather than clustering at extremes.
+**Scoring thresholds calibrated to data distribution:** The 99th-percentile ticket cap (13), the observed maximum inactivity ceiling, and the 75%+ seat saturation threshold were chosen by inspecting the CSV, not pulled from thin air. The inactivity ceiling in particular is computed dynamically from the dataset maximum — data exploration showed accounts exceeding any reasonable hardcoded threshold, so we use `df["days_since_last_sales_activity"].max()` as both the null fill value and the normalization ceiling. This keeps accounts spread across the label bands rather than clustering at extremes.
 
 ### Product & UX
 
