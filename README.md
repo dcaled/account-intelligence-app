@@ -151,30 +151,31 @@ Risk is weighted higher (60%) because an unaddressed churn risk produces a certa
 
 ## LLM Prompt Design
 
-### Context selection rationale
+### User message structure
 
-The model receives **derived signals, not raw columns.** "Seat utilization: 38%" is actionable; "nr_active_users: 7, nr_licensed_seats: 18" requires the AE to do the math mid-call. The prompt includes:
+Each account generates a unique user message built in three parts. The model receives **derived signals, not raw columns** — "Seat utilization: 38%" is actionable; "nr_active_users: 7, nr_licensed_seats: 18" requires the AE to do the math mid-call.
 
-- **Always:** account name, description, industry, segment, current ARR, days to renewal
-- **Conditionally:** call transcript summary (only if one exists, prefixed with recency in days)
-- **Derived:** seat utilization %, AI adoption %, risk label + score, opportunity label + score, end-of-quarter (EOQ) expansion signal if projected ARR exceeds current ARR
-- **Omitted:** raw IDs, employee count, region — low signal for a meeting prep brief
+**Part 1 — Company context (always included).** Account name, description, industry, segment, current ARR, and end-of-quarter projected ARR with the percentage change (e.g. `+12%`, `-8%`, or `flat`). This grounds the model in who the account is and their financial trajectory before any signals are evaluated.
 
-### System prompt
+**Part 2 — Risk and opportunity signals (conditional).** The recommended action (e.g. `Protect`, `Expand`), risk label and score, opportunity label and score, and only the signals that actually fired for this account. An account with no open tickets, healthy utilization, and no contraction signal receives none of those lines — the prompt reflects only what is true for that account. Raw numbers are not sent directly; each signal passes through an interpreter function that translates it into language the model can reason about (see table below).
 
-```
-You are an expert Account Executive coach preparing a sales professional for a customer meeting.
-Be concise, opinionated, and specific to this account — never generic.
-Speak directly to the AE: use "you should", "ask them about", "avoid".
-Structure your response in exactly these sections:
-**Situation** (2 sentences): current state of the account.
-**Top priority**: the single most important thing to accomplish in this meeting.
-**Talking points** (3 bullets): account-specific, not generic.
-**Watch out for**: one risk or objection to prepare for.
-**Suggested ask**: one concrete commitment to request before the call ends.
-```
+**Part 3 — Last call transcript (conditional).** If a transcript exists, it's included with recency in days so the model knows how stale the context is. If no transcript exists, the model is told explicitly — so it doesn't hallucinate a recent conversation.
 
-"Opinionated, not generic" is the most important instruction — without it the model produces boilerplate that could apply to any account. Prescribing the output sections eliminates formatting variation across accounts and makes the brief immediately scannable.
+**Omitted entirely:** raw column IDs, employee headcount, region. These carry low signal for a meeting-prep brief.
+
+### Meeting brief structure
+
+The system prompt instructs the model to act as an AE coach — concise, opinionated, and specific to the account — and to structure output in exactly five sections:
+
+| Section | Format | Purpose |
+|---|---|---|
+| **Situation** | 2 sentences | Current state of the account — risk posture, renewal timing, relationship health |
+| **Top priority** | 1 sentence | The single most important thing to accomplish in this meeting |
+| **Talking points** | 3 bullets | Account-specific conversation starters, not generic advice |
+| **Watch out for** | 1 sentence | One risk or objection to prepare for before the call |
+| **Suggested ask** | 1 sentence | A concrete commitment to request before the call ends |
+
+Prescribing the sections and lengths serves two purposes: it eliminates formatting variation across accounts so the AE always knows where to look, and it prevents the model from filling token budget with hedging or preamble. The "opinionated, not generic" instruction is the most important constraint — without it the model produces boilerplate that could apply to any account.
 
 ### Conditional signals and interpreter functions
 
