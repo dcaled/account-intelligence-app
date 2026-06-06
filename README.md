@@ -201,24 +201,33 @@ Output is streamed token-by-token via `anthropic.messages.stream()` and rendered
 ## Architecture
 
 ```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart TD
     CSV[("account_data.csv")]
 
-    DL["**data_loader.py**\nLoads CSV · fills nulls\ncomputes seat_utilization, arr_uplift, license_coverage"]
+    DL["data_loader.py\nLoads CSV · fills nulls\nderives seat_utilization, arr_uplift, license_coverage"]
 
-    SC["**scorer.py**\nRisk score · Opportunity score\nAttention score · Primary action"]
+    SC["scorer.py\nRisk score · Opportunity score · Attention score · Primary action"]
 
-    APP["**app.py**\nStreamlit UI\nFilters · Account table · Detail panel"]
+    APP["app.py**\nStreamlit UI · Filters · Account table · Detail panel"]
 
-    PB["**prompt_builder.py**\nBuilds 3-part user message\nwith conditional signals & interpreters"]
+    PB["prompt_builder.py\n3-part user message · conditional signals & interpreters"]
 
-    LC["**llm_client.py**\nAnthropic SDK streaming wrapper"]
+    LC["llm_client.py\nAnthropic SDK streaming wrapper"]
 
-    API[/"Anthropic API\nclaude-haiku-4-5"/]
+    API[/"Anthropic API — claude-haiku-4-5"/]
 
     CSV --> DL --> SC --> APP
-    APP -->|"on Generate Brief"| PB --> LC --> API
-    API -->|"streaming tokens"| APP
+    APP -- "on Generate Brief" --> PB --> LC --> API
+    API -- "streaming tokens" --> APP
+
+    style CSV fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    style DL fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+    style SC fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+    style APP fill:#d1fae5,stroke:#059669,color:#064e3b
+    style PB fill:#fef3c7,stroke:#d97706,color:#78350f
+    style LC fill:#fef3c7,stroke:#d97706,color:#78350f
+    style API fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
 ```
 
 ---
@@ -243,9 +252,11 @@ flowchart TD
 
 ## Future Improvements
 
-- **Account history view:** trend lines for utilization and ticket volume over time (requires time-series data not in this CSV)
-- **Batch brief generation:** pre-warm briefs for the top 10 accounts at startup so the AE sees instant output
-- **Saved briefs:** persist generated briefs to a local SQLite database so they survive page refreshes
-- **Confidence indicators:** surface when a score is driven by a single dominant signal (e.g., renewal in 2 days) so the AE knows how much to trust it
+- **Persistent session state:** save generated briefs, contact flags, and call notes to a local database so the AE's work survives page refreshes and carries over between sessions
+- **Contact tracking:** a checkbox per account to mark it as contacted, with a free-text field to log the latest call outcome. This would feed back into the scoring pipeline — a freshly contacted account should see its inactivity signal reset, and a logged call note should replace the stale transcript in the next brief
+- **Account history view:** trend lines for utilization, ticket volume, and AI adoption over time — requires time-series data not available in the current snapshot CSV
+- **Churn labels and supervised scoring:** if historical outcomes (churned / renewed / expanded) are logged alongside the signal data, the rule-based weights could be replaced by a trained model (e.g. XGBoost) that learns which signals actually predicted churn in this portfolio. The feature engineering done here transfers directly.
 - **Evaluation harness:** score the quality of generated briefs against a rubric using the model-as-judge pattern
+- **Batch brief generation:** pre-warm briefs for the top 10 accounts at startup so the AE sees instant output
+- **Confidence indicators:** surface when a score is driven by a single dominant signal (e.g., renewal in 2 days) so the AE knows how much to trust it
 - **Auth + multi-AE support:** each AE sees only their assigned accounts
