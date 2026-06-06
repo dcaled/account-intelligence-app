@@ -200,25 +200,25 @@ Output is streamed token-by-token via `anthropic.messages.stream()` and rendered
 
 ## Architecture
 
-```
-account_data.csv
-      │
-      ▼
-data_loader.py   ← loads CSV, handles nulls, computes utilization + uplift ratio
-      │
-      ▼
-scorer.py        ← computes risk_score, opportunity_score, attention_score per account
-      │
-      ▼
-app.py           ← Streamlit UI: filters, sorted account table, account detail panel
-      │
-      └── prompt_builder.py  ← assembles LLM context from account dict + scores
-              │
-              ▼
-          llm_client.py      ← Anthropic SDK streaming wrapper
-              │
-              ▼
-        Anthropic API (claude-haiku-4-5)
+```mermaid
+flowchart TD
+    CSV[("account_data.csv")]
+
+    DL["**data_loader.py**\nLoads CSV · fills nulls\ncomputes seat_utilization, arr_uplift, license_coverage"]
+
+    SC["**scorer.py**\nRisk score · Opportunity score\nAttention score · Primary action"]
+
+    APP["**app.py**\nStreamlit UI\nFilters · Account table · Detail panel"]
+
+    PB["**prompt_builder.py**\nBuilds 3-part user message\nwith conditional signals & interpreters"]
+
+    LC["**llm_client.py**\nAnthropic SDK streaming wrapper"]
+
+    API[/"Anthropic API\nclaude-haiku-4-5"/]
+
+    CSV --> DL --> SC --> APP
+    APP -->|"on Generate Brief"| PB --> LC --> API
+    API -->|"streaming tokens"| APP
 ```
 
 ---
